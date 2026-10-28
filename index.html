@@ -181,23 +181,27 @@
       transform: translate(-4px, 4px);
     }
 
-    .enlace:hover,
-    .enlace:focus-visible {
+    /* Solo con cursor: en pantallas táctiles el hover se queda pegado tras tocar */
+    @media (hover: hover) {
+      .enlace:hover {
+        background: var(--vidrio-hover);
+        border-color: rgba(255, 255, 255, 0.28);
+        transform: translateY(-1px);
+      }
+
+      .enlace:hover::before,
+      .enlace:hover::after {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    .enlace:active {
       background: var(--vidrio-hover);
-      border-color: rgba(255, 255, 255, 0.28);
-      transform: translateY(-1px);
+      transform: scale(0.99);
     }
 
-    .enlace:hover::before,
-    .enlace:hover::after,
-    .enlace:focus-visible::before,
-    .enlace:focus-visible::after {
-      opacity: 1;
-      transform: none;
-    }
-
-    .enlace:active { transform: translateY(0) scale(0.99); }
-
+    /* Foco de teclado: solo el contorno, para no confundirse con el hover */
     .enlace:focus-visible {
       outline: 2px solid var(--verde);
       outline-offset: 3px;
