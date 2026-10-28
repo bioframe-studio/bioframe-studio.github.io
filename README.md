@@ -1,7 +1,7 @@
 # BioFrame · Enlaces
 
 Página de enlaces de BioFrame (alternativa gratuita a Linktree), publicada con GitHub Pages:
-https://organicbrownkid.github.io/bioframe/
+https://bioframe-studio.github.io/
 
 ## Cambiar un enlace
 
