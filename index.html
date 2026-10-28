@@ -45,24 +45,50 @@
       margin: 0;
       min-height: 100vh;
       min-height: 100dvh;
-      background-color: var(--negro);
+      background:
+        radial-gradient(ellipse 60% 40% at 90% 18%, rgba(18, 255, 70, 0.07), transparent 70%),
+        radial-gradient(ellipse 55% 35% at 5% 70%, rgba(18, 255, 70, 0.08), transparent 70%),
+        var(--negro);
+      background-attachment: fixed;
       color: var(--blanco);
       font-family: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
       -webkit-font-smoothing: antialiased;
     }
 
-    /* Fondo fijo en una capa propia: background-attachment: fixed falla en iOS */
-    body::before {
+    /* Capas fijas (background-attachment: fixed falla en iOS):
+       ::before = imagen de respaldo, #ondas = animación, ::after = velo para leer el texto */
+    body::before,
+    body::after {
       content: "";
       position: fixed;
       inset: 0;
       z-index: -1;
+      pointer-events: none;
+    }
+
+    body::before {
+      background: url("assets/bg.webp") center / cover no-repeat;
+      transition: opacity 1.2s ease;
+    }
+
+    body::after {
       background:
         radial-gradient(ellipse 70% 45% at 50% 30%, rgba(9, 9, 9, 0.55), transparent 70%),
-        linear-gradient(rgba(9, 9, 9, 0.25), rgba(9, 9, 9, 0.45)),
-        url("assets/bg.webp") center / cover no-repeat,
-        var(--negro);
+        linear-gradient(rgba(9, 9, 9, 0.25), rgba(9, 9, 9, 0.45));
     }
+
+    #ondas {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      transition: opacity 1.2s ease;
+    }
+
+    .animado body::before { opacity: 0; }
+    .animado #ondas { opacity: 1; }
 
     main {
       width: 100%;
@@ -214,6 +240,7 @@
   </style>
 </head>
 <body>
+  <canvas id="ondas" aria-hidden="true"></canvas>
   <main>
     <div class="avatar">
       <img src="assets/logo.webp" width="96" height="96" alt="Logo de BioFrame">
@@ -257,5 +284,152 @@
     </ul>
     <span id="nueva-pestana" hidden>Se abre en una pestaña nueva</span>
   </main>
+
+  <script>
+    // Ondas de partículas dibujadas con WebGL: nítidas a cualquier resolución.
+    // Sin WebGL o con movimiento reducido se queda la imagen de respaldo.
+    (() => {
+      const canvas = document.getElementById("ondas");
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      const gl = canvas.getContext("webgl", { antialias: false, premultipliedAlpha: true });
+      if (!gl) return;
+
+      const vertex = `
+        attribute vec3 a; // u, v, semilla (en polvo: x, y, semilla)
+        uniform float t, dpr, modo;
+        uniform vec2 ext;           // semiejes de la pantalla en unidades del lado corto
+        uniform vec4 forma;         // centro x, centro y, ángulo, largo
+        uniform vec4 onda;          // ancho, fase, velocidad, tamaño de punto
+        varying float vAlfa, vLuz, vSuave;
+        void main() {
+          float s = a.z;
+          vec2 p;
+          float z;
+          vSuave = 0.0;
+          if (modo != 1.0) {
+            // Lámina que se tuerce: donde el giro la pone de canto, las líneas
+            // se juntan y forman la cresta brillante
+            float u = a.x, v = a.y;
+            float x = (u - 0.5) * forma.w * length(ext);
+            float tt = t * onda.z, f = onda.y;
+            float y = 0.22 * sin(1.3 * x + tt + f) + 0.06 * sin(2.9 * x - 1.2 * tt + 2.0 * f);
+            float giro = 1.1 * x - 0.7 * tt + f;
+            float ancho = onda.x * (0.75 + 0.25 * sin(0.8 * x + 0.5 * tt + f));
+            float lado = (v - 0.5) * ancho;
+            y += lado * cos(giro) + 0.012 * sin(7.0 * x + v * 9.0 + 2.0 * tt);
+            z = clamp(2.0 * (v - 0.5) * sin(giro) + 0.35 * sin(0.9 * x + 0.4 * tt), -1.0, 1.0);
+            float c = cos(forma.z), sn = sin(forma.z);
+            p = vec2(x * c - y * sn, x * sn + y * c) + forma.xy * ext;
+            float bordes = smoothstep(0.0, 0.15, u) * (1.0 - smoothstep(0.85, 1.0, u));
+            float cresta = smoothstep(0.82, 1.0, v);
+            vAlfa = (0.15 + 0.6 * (0.5 + 0.5 * z) + 1.2 * cresta) * bordes * (0.7 + 0.3 * sin(2.0 * t + s * 40.0));
+            if (modo == 2.0) { vAlfa *= 0.08; vSuave = 1.0; }
+          } else {
+            p = (a.xy * 2.0 - 1.0) * ext + 0.04 * vec2(sin(0.15 * t + s * 6.0), cos(0.12 * t + s * 9.0));
+            z = sin(s * 50.0);
+            vAlfa = 0.7 * (0.5 + 0.5 * sin(1.3 * t + s * 30.0));
+          }
+          vLuz = smoothstep(0.7, 1.0, z);
+          gl_Position = vec4(p / ext, 0.0, 1.0);
+          float tam = (0.9 + 1.4 * (0.5 + 0.5 * z)) * (0.7 + 0.6 * fract(s * 7.0)) * onda.w;
+          gl_PointSize = (modo == 2.0 ? 70.0 : tam) * dpr;
+        }`;
+
+      const fragment = `
+        precision mediump float;
+        varying float vAlfa, vLuz, vSuave;
+        void main() {
+          vec2 d = gl_PointCoord - 0.5;
+          float r = dot(d, d) * 4.0;
+          float k = mix(1.0 - smoothstep(0.35, 1.0, r), exp(-4.0 * r) * step(r, 1.0), vSuave) * vAlfa;
+          vec3 color = mix(vec3(0.07, 1.0, 0.27), vec3(0.6, 1.0, 0.68), vLuz);
+          gl_FragColor = vec4(color * k, k);
+        }`;
+
+      const compilar = (tipo, fuente) => {
+        const sh = gl.createShader(tipo);
+        gl.shaderSource(sh, fuente);
+        gl.compileShader(sh);
+        return sh;
+      };
+      const prog = gl.createProgram();
+      gl.attachShader(prog, compilar(gl.VERTEX_SHADER, vertex));
+      gl.attachShader(prog, compilar(gl.FRAGMENT_SHADER, fragment));
+      gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return;
+      gl.useProgram(prog);
+
+      // Malla fina de cada onda (u a lo largo, v a lo ancho), malla gruesa para
+      // el resplandor y polvo suelto, todo en un mismo búfer
+      const movil = innerWidth < 640;
+      const NU = movil ? 420 : 640, NV = movil ? 28 : 36, POLVO = movil ? 260 : 520;
+      const HU = 40, HV = 6;
+      const datos = [];
+      const malla = (nu, nv) => {
+        for (let i = 0; i < nu; i++)
+          for (let j = 0; j < nv; j++) datos.push(i / (nu - 1), j / (nv - 1), Math.random());
+      };
+      malla(NU, NV);
+      malla(HU, HV);
+      for (let i = 0; i < POLVO; i++) datos.push(Math.random(), Math.random(), Math.random());
+      gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(datos), gl.STATIC_DRAW);
+      const aLoc = gl.getAttribLocation(prog, "a");
+      gl.enableVertexAttribArray(aLoc);
+      gl.vertexAttribPointer(aLoc, 3, gl.FLOAT, false, 0, 0);
+
+      const u = {};
+      for (const n of ["t", "dpr", "modo", "ext", "forma", "onda"]) u[n] = gl.getUniformLocation(prog, n);
+
+      // Arriba a la derecha y abajo a la izquierda, como los corchetes del logo
+      const ondas = [
+        { forma: [0.7, 0.58, -1.0, 1.1], onda: [0.7, 0.0, 0.22, 1.0] },
+        { forma: [-0.15, -0.62, -0.38, 1.75], onda: [0.8, 2.4, 0.18, 1.1] },
+      ];
+
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE);
+      gl.clearColor(0, 0, 0, 0);
+
+      let dpr = 1;
+      const ajustar = () => {
+        dpr = Math.min(devicePixelRatio || 1, 2);
+        const w = canvas.clientWidth, h = canvas.clientHeight;
+        canvas.width = Math.round(w * dpr);
+        canvas.height = Math.round(h * dpr);
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        const corto = Math.min(w, h);
+        gl.uniform2f(u.ext, w / corto, h / corto);
+        gl.uniform1f(u.dpr, dpr);
+      };
+      addEventListener("resize", ajustar);
+      ajustar();
+
+      const inicio = performance.now();
+      let primero = true;
+      const cuadro = (ahora) => {
+        gl.uniform1f(u.t, (ahora - inicio) / 1000);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.uniform1f(u.modo, 0);
+        for (const o of ondas) {
+          gl.uniform4fv(u.forma, o.forma);
+          gl.uniform4fv(u.onda, o.onda);
+          gl.uniform1f(u.modo, 2);
+          gl.drawArrays(gl.POINTS, NU * NV, HU * HV);
+          gl.uniform1f(u.modo, 0);
+          gl.drawArrays(gl.POINTS, 0, NU * NV);
+        }
+        gl.uniform1f(u.modo, 1);
+        gl.uniform4fv(u.onda, [0, 0, 0, 1.2]);
+        gl.drawArrays(gl.POINTS, NU * NV + HU * HV, POLVO);
+        if (primero) {
+          primero = false;
+          document.documentElement.classList.add("animado");
+        }
+        requestAnimationFrame(cuadro);
+      };
+      requestAnimationFrame(cuadro);
+    })();
+  </script>
 </body>
 </html>
