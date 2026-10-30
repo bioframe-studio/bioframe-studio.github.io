@@ -165,7 +165,7 @@
       font-size: 0.975rem;
       font-weight: 500;
       text-decoration: none;
-      transition: background-color 180ms ease, transform 180ms ease, border-color 180ms ease;
+      transition: background-color 180ms ease, transform 180ms ease, border-color 180ms ease, color 180ms ease;
     }
 
     .enlace svg {
@@ -209,9 +209,11 @@
 
     /* Solo con cursor: en pantallas táctiles el hover se queda pegado tras tocar */
     @media (hover: hover) {
+      /* Borde, ícono y texto en el verde de la marca (el ícono hereda el color) */
       .enlace:hover {
         background: var(--vidrio-hover);
-        border-color: rgba(255, 255, 255, 0.28);
+        border-color: var(--verde);
+        color: var(--verde);
         transform: translateY(-1px);
       }
 
